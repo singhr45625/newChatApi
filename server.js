@@ -11,6 +11,7 @@ import messageRoutes from "./routes/message.route.js";
 import { app, server } from "./lib/socket.js";
 
 dotenv.config();
+app.set("trust proxy", 1);
 
 const PORT = process.env.PORT || 5001;
 const __dirname = path.resolve();

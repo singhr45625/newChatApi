@@ -21,7 +21,12 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser());
 app.use(
     cors({
-        origin: ["http://localhost:5173", "https://newchatapi.onrender.com"],
+        origin: [
+            "http://localhost:5173",
+            "https://newchatapi.onrender.com",
+            "https://b63fwxhc-5173.inc1.devtunnels.ms",
+            process.env.FRONTEND_URL,
+        ].filter(Boolean),
         credentials: true,
     })
 );

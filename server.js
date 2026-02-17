@@ -32,6 +32,7 @@ app.use(
     cors({
         origin: [
             "http://localhost:5173",
+            "https://new-chat-frontend-peach.vercel.app",
             "https://newchatapi.onrender.com",
             "https://b63fwxhc-5173.inc1.devtunnels.ms",
             process.env.FRONTEND_URL,

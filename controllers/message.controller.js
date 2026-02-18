@@ -61,6 +61,7 @@ export const createGroup = async (req, res) => {
         });
 
         await newGroup.save();
+
         res.status(201).json(newGroup);
     } catch (error) {
         console.log("Error in createGroup controller: ", error.message);
@@ -71,7 +72,9 @@ export const createGroup = async (req, res) => {
 export const getGroups = async (req, res) => {
     try {
         const userId = req.user._id;
+
         const groups = await Group.find({ participants: userId }).populate("admin", "fullName");
+
         res.status(200).json(groups);
     } catch (error) {
         console.log("Error in getGroups controller: ", error.message);
@@ -82,7 +85,9 @@ export const getGroups = async (req, res) => {
 export const getGroupMessages = async (req, res) => {
     try {
         const { id: groupId } = req.params;
+
         const messages = await Message.find({ groupId });
+
         res.status(200).json(messages);
     } catch (error) {
         console.log("Error in getGroupMessages controller: ", error.message);

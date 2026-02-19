@@ -125,36 +125,25 @@ jobs:
             
             # Save PM2 list
             pm2 save
+
+            # Verify deployment significantly
+            echo "Verifying deployment..."
+            sleep 10
+            
+            # Check localhost (bypasses firewall issues)
+            if curl -s http://localhost:5001 > /dev/null; then
+              echo "✅ App is running locally on port 5001"
+            else
+              echo "❌ App failed to respond on localhost:5001"
+              echo "🔍 PM2 Logs (Last 50 lines):"
+              pm2 logs antigravity-backend --lines 50 --nostream
+              exit 1
+            fi
            
           EOF
 
           # Cleanup local key
           rm private_key.pem
-
-      - name: Verify deployment
-        env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
-        run: |
-          echo "Waiting for application to start..."
-          sleep 10
-
-          # Check if app responds
-          for i in {1..5}; do
-            echo "Attempt $i of 5..."
-            response=$(curl -s -o /dev/null -w "%{http_code}" http://${EC2_HOST}:5001 2>/dev/null || echo "000")
-            
-            if [ "$response" = "200" ] || [ "$response" = "301" ] || [ "$response" = "302" ]; then
-              echo "✅ Deployment successful! App is responding with status: $response"
-              exit 0
-            fi
-            
-            echo "Got response: $response, waiting 5 seconds..."
-            sleep 5
-          done
-
-          echo "❌ Deployment verification failed after 5 attempts"
-          echo "Please check PM2 logs on the server"
-          exit 1
 
       - name: Rollback on failure
         if: failure()

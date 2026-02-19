@@ -38,8 +38,14 @@ export const sendMessage = async (req, res) => {
         await newMessage.save();
 
         const receiverSocketId = getReceiverSocketId(receiverId);
+        console.log(`[MESSAGE] Sending to receiver: ${receiverId}`);
+        console.log(`[MESSAGE] Receiver Socket ID: ${receiverSocketId}`);
+
         if (receiverSocketId) {
             io.to(receiverSocketId).emit("newMessage", newMessage);
+            console.log(`[MESSAGE] Event 'newMessage' emitted to ${receiverSocketId}`);
+        } else {
+            console.log(`[MESSAGE] Receiver ${receiverId} is offline (no socket found)`);
         }
 
         res.status(201).json(newMessage);

@@ -2,26 +2,195 @@ name: Deploy Backend
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
+  workflow_dispatch: # manual trigger
 
 jobs:
-  deploy:
+  build:
+    name: Build Application
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Deploy to EC2 via SSH
-        uses: appleboy/ssh-action@v1.0.3
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          host: ${{ secrets.SERVER_IP }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
-            cd /var/www/express-app
-            git pull origin main
-            npm install
-            npm run build
-            pm2 restart ecosystem.config.cjs --env production
+          node-version: "20.x"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Application
+        run: npm run build
+
+      - name: Create deployment package
+        run: |
+          # Create a clean tarball excluding development and git files
+          tar -czf deploy.tar.gz \
+            --exclude=node_modules \
+            --exclude=.git \
+            --exclude=.github \
+            --exclude=.env \
+            --exclude=deploy.tar.gz \
+            .
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-package
+          path: deploy.tar.gz
+          retention-days: 1
+
+  deploy:
+    name: Deploy to EC2
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: deployment-package
+
+      - name: Deploy to EC2 via SSH
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
+          SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
+        run: |
+          # Create SSH key file
+          echo "$SSH_PRIVATE_KEY" > private_key.pem
+          chmod 600 private_key.pem
+
+          # Copy deployment package to EC2
+          scp -i private_key.pem -o StrictHostKeyChecking=no \
+            deploy.tar.gz ${EC2_USERNAME}@${EC2_HOST}:/tmp/
+
+          # SSH into EC2 and deploy
+          ssh -i private_key.pem -o StrictHostKeyChecking=no \
+            ${EC2_USERNAME}@${EC2_HOST} << 'EOF'
+            
+            # Destination directory
+            APP_DIR="/var/www/express-app"
+            mkdir -p $APP_DIR
+
+            # Navigate to app directory
+            cd $APP_DIR
+
+            # Fix ownership first
+            echo "Fixing directory ownership..."
+            sudo chown -R $USER:$USER $APP_DIR
+            
+            # Backup current version
+            if [ -f "package.json" ]; then
+              timestamp=$(date +%Y%m%d_%H%M%S)
+              mkdir -p backups
+              # Backup everything except backups and node_modules to save space/time
+              tar -czf backups/backup_${timestamp}.tar.gz --exclude=backups --exclude=node_modules . 2>/dev/null || true
+              
+              # Keep only last 5 backups
+              ls -t backups/backup_*.tar.gz 2>/dev/null | tail -n +6 | xargs -r rm
+              echo "Backup created: backup_${timestamp}.tar.gz"
+            fi
+            
+            # Extract new version (overwrite existing)
+            echo "Extracting new deployment package..."
+            tar --overwrite -xzf /tmp/deploy.tar.gz -C $APP_DIR
+            rm /tmp/deploy.tar.gz
+
+            # Install production dependencies
+            echo "Installing production dependencies..."
+            npm ci --omit=dev
+            
+            # Create .env file if it doesn't exist
+            if [ ! -f .env ]; then
+              echo "Creating default .env file..."
+              echo "NODE_ENV=production" > .env
+              echo "PORT=5001" >> .env
+              echo "HOST=0.0.0.0" >> .env
+              # Note: Sensitive vars like MONGODB_URI should be added manually on the server
+            fi
+            
+            # Zero-downtime reload with PM2
+            if pm2 describe antigravity-backend > /dev/null 2>&1; then
+              echo "Reloading PM2 app (zero-downtime)..."
+              pm2 reload ecosystem.config.cjs --update-env
+            else
+              echo "Starting new PM2 process..."
+              pm2 start ecosystem.config.cjs
+            fi
+            
+            # Save PM2 list
+            pm2 save
+           
+          EOF
+
+          # Cleanup local key
+          rm private_key.pem
+
+      - name: Verify deployment
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          echo "Waiting for application to start..."
+          sleep 10
+
+          # Check if app responds
+          for i in {1..5}; do
+            echo "Attempt $i of 5..."
+            response=$(curl -s -o /dev/null -w "%{http_code}" http://${EC2_HOST}:5001 2>/dev/null || echo "000")
+            
+            if [ "$response" = "200" ] || [ "$response" = "301" ] || [ "$response" = "302" ]; then
+              echo "✅ Deployment successful! App is responding with status: $response"
+              exit 0
+            fi
+            
+            echo "Got response: $response, waiting 5 seconds..."
+            sleep 5
+          done
+
+          echo "❌ Deployment verification failed after 5 attempts"
+          echo "Please check PM2 logs on the server"
+          exit 1
+
+      - name: Rollback on failure
+        if: failure()
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
+          SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
+        run: |
+          echo "🔄 Attempting to rollback to previous version..."
+
+          echo "$SSH_PRIVATE_KEY" > private_key.pem
+          chmod 600 private_key.pem
+
+          ssh -i private_key.pem -o StrictHostKeyChecking=no \
+            ${EC2_USERNAME}@${EC2_HOST} << 'EOF'
+            
+            APP_DIR="/var/www/express-app"
+            cd $APP_DIR
+            
+            # Find latest backup
+            latest_backup=$(ls -t backups/backup_*.tar.gz 2>/dev/null | head -1)
+            
+            if [ -n "$latest_backup" ]; then
+              echo "Found backup: $latest_backup"
+              # Extract backup
+              tar -xzf "$latest_backup" -C $APP_DIR
+              
+              # Re-install dependencies just in case
+              npm ci --omit=dev
+              
+              # Reload PM2
+              pm2 reload ecosystem.config.cjs
+              echo "✅ Rolled back to previous version"
+            else
+              echo "⚠️ No backup found, cannot rollback"
+            fi
+          EOF
+
+          rm private_key.pem

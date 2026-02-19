@@ -29,13 +29,13 @@ jobs:
       - name: Create deployment package
         run: |
           # Create a clean tarball excluding development and git files
-          tar -czf deploy.tar.gz \
+          tar -czf /tmp/deploy.tar.gz \
             --exclude=node_modules \
             --exclude=.git \
             --exclude=.github \
             --exclude=.env \
-            --exclude=deploy.tar.gz \
             .
+          mv /tmp/deploy.tar.gz ./deploy.tar.gz
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4

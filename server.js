@@ -35,6 +35,8 @@ app.use(
             "https://new-chat-frontend-peach.vercel.app",
             "https://newchatapi.onrender.com",
             "https://b63fwxhc-5173.inc1.devtunnels.ms",
+            "http://ec2-13-60-9-139.eu-north-1.compute.amazonaws.com:5001",
+            "http://ec2-13-60-9-139.eu-north-1.compute.amazonaws.com",
             process.env.FRONTEND_URL,
         ].filter(Boolean),
         credentials: true,

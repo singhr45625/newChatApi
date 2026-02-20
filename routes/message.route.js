@@ -1,13 +1,14 @@
 import express from "express";
 import { protectRoute } from "../middleware/auth.middleware.js";
 import { getMessages, sendMessage, createGroup, getGroups, getGroupMessages, sendGroupMessage } from "../controllers/message.controller.js";
-import { getUsersForSidebar, searchUsers } from "../controllers/user.controller.js";
+import { getUsersForSidebar, searchUsers, getParticipantById } from "../controllers/user.controller.js";
 import { messageLimiter } from "../middleware/rateLimiter.js";
 
 const router = express.Router();
 
 router.get("/users", protectRoute, getUsersForSidebar);
 router.get("/search", protectRoute, searchUsers);
+router.get("/participant/:id", protectRoute, getParticipantById);
 router.get("/:id", protectRoute, getMessages);
 router.post("/send/:id", protectRoute, messageLimiter, sendMessage);
 

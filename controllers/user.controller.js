@@ -32,23 +32,31 @@ export const getUsersForSidebar = async (req, res) => {
 
 export const searchUsers = async (req, res) => {
     try {
-        const { email } = req.query;
+        const { query } = req.query; // Use 'query' instead of 'email' for more flexibility
         const loggedInUserId = req.user._id;
 
-        if (!email) {
-            return res.status(400).json({ message: "Email is required" });
+        if (!query) {
+            return res.status(400).json({ message: "Search query is required" });
         }
 
-        const user = await User.findOne({
-            email: email,
-            _id: { $ne: loggedInUserId }
-        }).select("-password");
+        // Search by fullName OR email with case-insensitive partial matching
+        const users = await User.find({
+            $and: [
+                { _id: { $ne: loggedInUserId } },
+                {
+                    $or: [
+                        { email: { $regex: query, $options: "i" } },
+                        { fullName: { $regex: query, $options: "i" } }
+                    ]
+                }
+            ]
+        }).select("-password").limit(10);
 
-        if (!user) {
-            return res.status(404).json({ message: "User not found" });
+        if (!users || users.length === 0) {
+            return res.status(404).json({ message: "No users found" });
         }
 
-        res.status(200).json(user);
+        res.status(200).json(users);
     } catch (error) {
         console.error("Error in searchUsers: ", error.message);
         res.status(500).json({ message: "Internal server error" });
@@ -73,6 +81,20 @@ export const updateProfile = async (req, res) => {
         res.status(200).json(updatedUser);
     } catch (error) {
         console.log("error in update profile:", error);
+        res.status(500).json({ message: "Internal server error" });
+    }
+};
+
+export const getParticipantById = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const user = await User.findById(id).select("-password");
+        if (!user) {
+            return res.status(404).json({ message: "User not found" });
+        }
+        res.status(200).json(user);
+    } catch (error) {
+        console.error("Error in getParticipantById: ", error.message);
         res.status(500).json({ message: "Internal server error" });
     }
 };

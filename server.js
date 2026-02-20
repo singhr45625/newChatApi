@@ -35,6 +35,7 @@ app.use(
             "https://new-chat-frontend-peach.vercel.app",
             "https://newchatapi.onrender.com",
             "https://b63fwxhc-5173.inc1.devtunnels.ms",
+            "https://my-chat-app-node.duckdns.org",
             "https://my-chat-app-nod.duckdns.org",
             process.env.FRONTEND_URL,
         ].filter(Boolean),
